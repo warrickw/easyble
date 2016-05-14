@@ -4,11 +4,11 @@ import java.nio.ByteBuffer;
 
 import warrick.easyble.GattValue;
 
-public class Int16Value extends GattValue {
-    public Int16Value(short value) {
+public class Int16GattValue extends GattValue {
+    public Int16GattValue(short value) {
         this.value = value;
     }
-    public Int16Value() {
+    public Int16GattValue() {
 
     }
 

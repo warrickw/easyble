@@ -1,15 +1,19 @@
 package warrick.easyble;
 
+import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
+import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
+import android.content.Context;
 import android.support.annotation.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Provides a simple asynchronous api for communicating with a BLE device over GATT
@@ -19,21 +23,25 @@ public class EasyBleDevice {
     private boolean isServicesDiscovered = false;
     private boolean isConnecting = false;
 
-
-    private BluetoothGatt gatt;
-    public EasyBleDevice() {
-
+    BluetoothGatt gatt;
+    BluetoothDevice bluetoothDevice;
+    public EasyBleDevice(Context context, String address) {
+        BluetoothManager bluetoothManager = (BluetoothManager) context.getSystemService(Context.BLUETOOTH_SERVICE);
+        bluetoothDevice = bluetoothManager.getAdapter().getRemoteDevice(address);
+        gatt = bluetoothDevice.connectGatt(context, false, gattCallback);
     }
 
+    public void dispose() {
+        gatt.close();
+    }
 
-
-    private List<EasyGattService> services = null;
+    private List<EasyBleService> services = null;
 
     /**
      * Returns the services that this device offers
      * @return
      */
-    public @Nullable List<EasyGattService> getServices() {
+    public @Nullable List<EasyBleService> getServices() {
         return services;
     }
 
@@ -42,8 +50,9 @@ public class EasyBleDevice {
      * @param uuid The unique identifyer of the service to get
      * @return
      */
-    public @Nullable EasyGattService getService(String uuid) {
-        for(EasyGattService service : services) {
+    public @Nullable
+    EasyBleService getService(String uuid) {
+        for(EasyBleService service : services) {
             // If the service's id is the service we are trying to find, return it
             if(service.getUUID().toString().equals(uuid)) {
                 return service;
@@ -75,6 +84,11 @@ public class EasyBleDevice {
                     break;
                     case BluetoothProfile.STATE_DISCONNECTED:
                         isConnected = false;
+                        // Fire the disconnected callback
+                        for (DeviceStateChange c :
+                                stateChangeCallbacks) {
+                            c.disconnected();
+                        }
                         break;
             }
         }
@@ -85,10 +99,16 @@ public class EasyBleDevice {
                 // Mark the services as discovered
                 isServicesDiscovered = true;
 
-                // Create an EasyGattService for every service
+                // Create an EasyBleService for every service
                 services = new ArrayList<>();
                 for (BluetoothGattService service : gatt.getServices()) {
-                    services.add(new EasyGattService(EasyBleDevice.this, gatt, service));
+                    services.add(new EasyBleService(EasyBleDevice.this, gatt, service));
+                }
+
+                // This device is now ready since it has discovered all the services
+                for (DeviceStateChange c :
+                        stateChangeCallbacks) {
+                    c.ready();
                 }
             }
             else {
@@ -99,7 +119,7 @@ public class EasyBleDevice {
 
         @Override
         public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
-            for (DataEvents e :
+            for (EasyBleService e :
                     services) {
                 e.onCharacteristicRead(gatt, characteristic, status);
             }
@@ -107,7 +127,7 @@ public class EasyBleDevice {
 
         @Override
         public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
-            for (DataEvents e :
+            for (EasyBleService e :
                     services) {
                 e.onCharacteristicWrite(gatt, characteristic, status);
             }
@@ -115,7 +135,7 @@ public class EasyBleDevice {
 
         @Override
         public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
-            for (DataEvents e :
+            for (EasyBleService e :
                     services) {
                 e.onCharacteristicChanged(gatt, characteristic);
             }
@@ -123,7 +143,7 @@ public class EasyBleDevice {
 
         @Override
         public void onDescriptorRead(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
-            for (DataEvents e :
+            for (EasyBleService e :
                     services) {
                 e.onDescriptorRead(gatt, descriptor, status);
             }
@@ -131,7 +151,7 @@ public class EasyBleDevice {
 
         @Override
         public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
-            for (DataEvents e :
+            for (EasyBleService e :
                     services) {
                 e.onDescriptorWrite(gatt, descriptor, status);
             }
@@ -139,7 +159,7 @@ public class EasyBleDevice {
 
         @Override
         public void onReliableWriteCompleted(BluetoothGatt gatt, int status) {
-            for (DataEvents e :
+            for (EasyBleService e :
                     services) {
                 e.onReliableWriteCompleted(gatt, status);
             }
@@ -147,6 +167,7 @@ public class EasyBleDevice {
 
         @Override
         public void onReadRemoteRssi(BluetoothGatt gatt, int rssi, int status) {
+
         }
 
         @Override
@@ -155,12 +176,34 @@ public class EasyBleDevice {
         }
     };
 
-    public interface DataEvents {
-        void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status);
-        void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status);
-        void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic);
-        void onDescriptorRead(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status);
-        void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status);
-        void onReliableWriteCompleted(BluetoothGatt gatt, int status);
+    public void enableNotifications(BluetoothGattCharacteristic characteristic) {
+        BluetoothGattDescriptor descriptor = characteristic.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"));
+
+        if(descriptor != null) {
+            gatt.setCharacteristicNotification(characteristic, true);
+            descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+            gatt.writeDescriptor(descriptor);
+        }
+    }
+
+    public void disableNotifications(BluetoothGattCharacteristic characteristic) {
+        BluetoothGattDescriptor descriptor = characteristic.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"));
+
+        if(descriptor != null) {
+            gatt.setCharacteristicNotification(characteristic, false);
+            descriptor.setValue(new byte[] { 0x00, 0x00 });
+            gatt.writeDescriptor(descriptor);
+
+        }
+    }
+
+    private List<DeviceStateChange> stateChangeCallbacks = new ArrayList<>();
+    public void addStateChangeCallback(DeviceStateChange callback) {
+        stateChangeCallbacks.add(callback);
+    }
+
+    public interface DeviceStateChange {
+         void ready();
+        void disconnected();
     }
 }

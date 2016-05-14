@@ -4,12 +4,12 @@ import java.nio.ByteBuffer;
 
 import warrick.easyble.GattValue;
 
-public class ByteValue extends GattValue {
-    public ByteValue(byte value) {
+public class ByteGattValue extends GattValue {
+    public ByteGattValue(byte value) {
         this.value = value;
     }
 
-    public ByteValue() {
+    public ByteGattValue() {
 
     }
 
@@ -25,8 +25,20 @@ public class ByteValue extends GattValue {
 
     private byte value = 0;
 
+    /**
+     * Gets the value in this gatt attribute
+     * @return
+     */
     public byte getValue() {
         return value;
+    }
+
+    /**
+     * Returns the unsigned equaivelant of the byte value
+     * @return
+     */
+    public int getUnsignedValue() {
+        return value & 0xFF;
     }
 
     public void setValue(byte value) {

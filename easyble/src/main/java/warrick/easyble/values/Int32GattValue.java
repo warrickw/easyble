@@ -4,11 +4,11 @@ import java.nio.ByteBuffer;
 
 import warrick.easyble.GattValue;
 
-public class Int32Value extends GattValue {
-    public Int32Value(int value) {
+public class Int32GattValue extends GattValue {
+    public Int32GattValue(int value) {
         this.value = value;
     }
-    public Int32Value() {
+    public Int32GattValue() {
 
     }
 
